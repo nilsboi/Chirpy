@@ -48,6 +48,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter,r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		html := fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", apiCfg.fileserverHits)
+		w.Write([]byte(html))
+})
+
+
+
 
 	server := &http.Server{
     Addr:    "localhost:8080",
