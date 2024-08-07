@@ -5,17 +5,84 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type apiConfig struct {
 	fileserverHits int
 }
 
+type returnError struct {
+	// the key will be the name of struct field unless you give it an explicit JSON tag
+	Error string `json:"error"`
+}
+
+type returnValid struct {
+	// the key will be the name of struct field unless you give it an explicit JSON tag
+	Cleaned_body string `json:"cleaned_body"`
+}
+
+type parameters struct {
+	// these tags indicate how the keys in the JSON should be mapped to the struct fields
+	// the struct fields must be exported (start with a capital letter) if you want them parsed
+	Body string `json:"body"`
+}
+
+
+
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileserverHits++
 		next.ServeHTTP(w, r)
 	})
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	
+	respError := returnError{
+		Error: msg,
+	}
+
+	dat, err := json.Marshal(respError)
+	
+	if err != nil {
+		w.WriteHeader(400)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(dat)
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	
+	dat, err := json.Marshal(payload)
+	if err != nil {
+		w.WriteHeader(400)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(dat)
+}
+
+func checkWords (msg string) string {
+
+	msgSlice := strings.Split(msg, " ") 
+
+	for i := 0; i < len(msgSlice); i++ {
+		if strings.ToLower(msgSlice[i]) == "kerfuffle" || 
+		strings.ToLower(msgSlice[i]) == "sharbert" ||
+		strings.ToLower(msgSlice[i])== "fornax" {
+			msgSlice[i] = "****"
+		}
+	}
+
+	msgCheck := strings.Join(msgSlice, " ")
+	
+	return msgCheck
 }
 
 func main() {
@@ -54,73 +121,29 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
-		type parameters struct {
-			// these tags indicate how the keys in the JSON should be mapped to the struct fields
-			// the struct fields must be exported (start with a capital letter) if you want them parsed
-			Body string `json:"body"`
-		}
-
-		type returnError struct {
-			// the key will be the name of struct field unless you give it an explicit JSON tag
-			Error string `json:"error"`
-		}
-
-		type returnValid struct {
-			// the key will be the name of struct field unless you give it an explicit JSON tag
-			Valid bool `json:"valid"`
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
+	
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 
 		err := decoder.Decode(&params)
-		
+
 		if err != nil {
-			respError := returnError{
-				Error: "Something went wrong",
-			}
-
-			dat, err := json.Marshal(respError)
-			if err != nil {
-				w.WriteHeader(400)
-				return
-			}
-
-			w.WriteHeader(400)
-			w.Write(dat)
+			respondWithError(w, 400, "Something went wrong")
 			return
 		}
 
 		if len(params.Body) > 140 {
-			respError := returnError{
-				Error: "Chirp is too long",
-			}
-
-			dat, err := json.Marshal(respError)
-			if err != nil {
-				w.WriteHeader(400)
-				return
-			}
-
-			w.WriteHeader(400)
-			w.Write(dat)
+			respondWithError(w, 400, "Chirp is too long")
 			return
 		}
+
+		msg := checkWords(params.Body)
 
 		respVal := returnValid{
-			Valid: true,
-		}
+			Cleaned_body: msg,
+			}
 
-		dat, err := json.Marshal(respVal)
-		if err != nil {
-			w.WriteHeader(400)
-			return
-		}
-
-		w.WriteHeader(200)
-		w.Write(dat)
+		respondWithJSON(w, 200, respVal)
 
 	})
 
