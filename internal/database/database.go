@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
@@ -28,6 +30,7 @@ type Chirp struct {
 type User struct {
 	ID   int    `json:"id"`
 	Email string `json:"email"`
+	Password *string `json:"password,omitempty"`
 }
 
 // CreateChirp creates a new chirp and saves it to disk
@@ -201,7 +204,7 @@ func NewDB(path string) (*DB, error) {
 	return &newDatabase, nil
 }
 
-func (db *DB) CreateUser(email string) (User, error) {
+func (db *DB) CreateUser(email string, password string) (User, error) {
 	users, err1 := db.GetUsers()
 
 	if err1 != nil {
@@ -215,13 +218,25 @@ func (db *DB) CreateUser(email string) (User, error) {
     if user.ID > max {
         max = user.ID
     }
+
+		if user.Email == email {
+			return User{}, errors.New("User already registered")
+		}
 	}
 
 	id := max +1
 
+	password, err4 := HashPassword(password)
+
+	if err4 != nil {
+		log.Printf("Error hashing password: %v", err4)
+		return User{}, err4
+	}
+
 	user := User{
 		ID: id,
 		Email: email,
+		Password: &password,
 	}
 
 	dbStructure, err2 := db.loadDB()
@@ -240,6 +255,7 @@ func (db *DB) CreateUser(email string) (User, error) {
 		return User{}, err3
 	}
 	
+	user.Password = nil
 
 	return user, nil 
 	
@@ -262,4 +278,41 @@ func (db *DB) GetUsers() ([]User, error) {
 	}
 
 	return users, nil
+}
+
+func (db *DB) Login(email string, password string) (User, error) {
+	
+	users, err1 := db.GetUsers()
+
+	if err1 != nil {
+		log.Printf("Error fetching users in database: %v", err1)
+		return User{}, err1
+	}
+	
+	for _, user := range users {
+    if user.Email == email {
+			check := CheckPasswordHash(password, *user.Password)
+			
+			if !check {
+				log.Print("Credentials not valid")
+				return User{}, errors.New("Problem with login")
+			}
+
+       user.Password = nil
+			 return user, nil
+			 
+    }
+	}
+	return User{}, errors.New("User not found")
+}
+
+
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	return string(bytes), err
+}
+
+func CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }

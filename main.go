@@ -32,6 +32,7 @@ type parameters struct {
 	// the struct fields must be exported (start with a capital letter) if you want them parsed
 	Body string `json:"body"`
 	Email string `json:"email"`
+	Password string `json:"password"`
 }
 
 
@@ -237,7 +238,7 @@ func main() {
 		}
 
 		log.Print(params.Email)
-		user, err := db.CreateUser(params.Email)
+		user, err := db.CreateUser(params.Email, params.Password)
 
 		if err != nil {
 			respondWithError(w, 400, "Fehler beim Erstellen des User: " + err.Error())
@@ -245,6 +246,36 @@ func main() {
 		}
 
 		respondWithJSON(w, 201, user)
+
+	})
+
+	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
+	
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+
+		err := decoder.Decode(&params)
+
+		if err != nil {
+			respondWithError(w, 400, "Something went wrong")
+			return
+		}
+
+		db, err := database.NewDB("database.json")
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB: " + err.Error())
+			return
+		}
+
+		user, err := db.Login(params.Email, params.Password)
+
+		if err != nil {
+			respondWithError(w, 401, "Fehler beim Erstellen des User: " + err.Error())
+			return
+		}
+
+		respondWithJSON(w, 200, user)
 
 	})
 
