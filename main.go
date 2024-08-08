@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/nilsboi/Chirpy/internal/database"
 )
 
 type apiConfig struct {
@@ -29,7 +31,6 @@ type parameters struct {
 }
 
 
-
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileserverHits++
@@ -38,7 +39,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
-	
+	w.Header().Set("Content-Type", "application/json")
 	respError := returnError{
 		Error: msg,
 	}
@@ -50,20 +51,21 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	
 	w.WriteHeader(code)
 	w.Write(dat)
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	
+	w.Header().Set("Content-Type", "application/json")
+
 	dat, err := json.Marshal(payload)
 	if err != nil {
 		w.WriteHeader(400)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	
 	w.WriteHeader(code)
 	w.Write(dat)
 }
@@ -120,7 +122,26 @@ func main() {
 		w.Write([]byte(html))
 	})
 
-	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+
+		db, err := database.NewDB("database.json")
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB: " + err.Error())
+			return
+		}
+
+		chirps, err := db.GetChirps()
+    if err != nil {
+        respondWithError(w, 400, "Fehler beim Abrufen der Chirps: " + err.Error())
+        return
+    }
+
+    respondWithJSON(w, 200, chirps)
+
+	})
+
+	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 	
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
@@ -137,13 +158,23 @@ func main() {
 			return
 		}
 
-		msg := checkWords(params.Body)
+	
+		db, err := database.NewDB("database.json")
 
-		respVal := returnValid{
-			Cleaned_body: msg,
-			}
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB: " + err.Error())
+			return
+		}
 
-		respondWithJSON(w, 200, respVal)
+		body := checkWords(params.Body)
+		chirp, err := db.CreateChirp(body)
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen des Chrip: " + err.Error())
+			return
+		}
+
+		respondWithJSON(w, 201, chirp)
 
 	})
 
