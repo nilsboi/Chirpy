@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -15,11 +16,18 @@ type DB struct {
 
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users map[int]User `json:"users"`
 }
 
 type Chirp struct {
 	ID   int    `json:"id"`
 	Body string `json:"body"`
+}
+
+
+type User struct {
+	ID   int    `json:"id"`
+	Email string `json:"email"`
 }
 
 // CreateChirp creates a new chirp and saves it to disk
@@ -87,11 +95,40 @@ defer db.mux.RUnlock()
 	return chirps, nil
 }
 
+// Get chrips bei id
+
+func (db *DB) GetChirp(id string) (Chirp, error) {
+	db.mux.RLock()
+	defer db.mux.RUnlock()
+	dbStructure, err := db.loadDB()
+
+	if err != nil {
+		log.Printf("Error fetching chirp in GetChir: %v", err)
+		return Chirp{}, err
+	}
+
+	find, err := strconv.Atoi(id) 
+	
+	if err != nil {
+		log.Printf("Error casting id in GetChir: %v", err)
+		return Chirp{}, err
+	}
+
+	for _, chirp := range dbStructure.Chirps {
+		
+   if chirp.ID == find {
+		return chirp, nil
+	 }
+	}
+
+	return Chirp{}, errors.New("ID not found")
+}
+
 // ensureDB creates a new database file if it doesn't exist
 func (db *DB) ensureDB() error {
 	db.mux.Lock()
 defer db.mux.Unlock()
-	err := os.WriteFile(db.path,[]byte(`{ "chirps": {} }`),0666)
+	err := os.WriteFile(db.path,[]byte(`{ "chirps": {}, "users": {} }`),0666)
 
 		if err != nil {
 			return err
@@ -162,4 +199,67 @@ func NewDB(path string) (*DB, error) {
 	}
 
 	return &newDatabase, nil
+}
+
+func (db *DB) CreateUser(email string) (User, error) {
+	users, err1 := db.GetUsers()
+
+	if err1 != nil {
+		log.Printf("Error fetching users in database: %v", err1)
+		return User{}, err1
+	}
+	
+	max := 0
+
+	for _, user := range users {
+    if user.ID > max {
+        max = user.ID
+    }
+	}
+
+	id := max +1
+
+	user := User{
+		ID: id,
+		Email: email,
+	}
+
+	dbStructure, err2 := db.loadDB()
+
+	if err2 != nil {
+		log.Printf("Error reading database file: %v", err2)
+		return User{}, err2
+	}
+
+	dbStructure.Users[id] = user
+
+	err3 := db.writeDB(dbStructure) 
+
+	if err3 != nil {
+		log.Printf("Error writing database file: %v", err3)
+		return User{}, err3
+	}
+	
+
+	return user, nil 
+	
+}
+
+func (db *DB) GetUsers() ([]User, error) {
+	db.mux.RLock()
+	defer db.mux.RUnlock()
+	dbStructure, err := db.loadDB()
+
+	if err != nil {
+		log.Printf("Error fetching users in GetUsers: %v", err)
+		return nil, err
+	}
+
+	users := make([]User, 0, len(dbStructure.Chirps))
+
+	for _, user := range dbStructure.Users {
+    users = append(users, user)
+	}
+
+	return users, nil
 }

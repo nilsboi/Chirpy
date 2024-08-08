@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -28,6 +31,7 @@ type parameters struct {
 	// these tags indicate how the keys in the JSON should be mapped to the struct fields
 	// the struct fields must be exported (start with a capital letter) if you want them parsed
 	Body string `json:"body"`
+	Email string `json:"email"`
 }
 
 
@@ -89,6 +93,18 @@ func checkWords (msg string) string {
 
 func main() {
 
+	dbg := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+	if *dbg {
+		log.Print("Debugging enabled")
+		e := os.Remove("database.json") 
+    if e != nil { 
+				log.Print(e)
+    } 
+
+	}
+
 	apiCfg := &apiConfig{}
 	mux := http.NewServeMux()
 
@@ -141,6 +157,28 @@ func main() {
 
 	})
 
+	mux.HandleFunc("GET /api/chirps/{id}", func(w http.ResponseWriter, r *http.Request) {
+
+		db, err := database.NewDB("database.json")
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB: " + err.Error())
+			return
+		}
+
+		chirp, err := db.GetChirp(r.PathValue("id"))
+
+    if err != nil {
+        respondWithError(w, 404, "Fehler beim Abrufen der Chirps: " + err.Error())
+        return
+    }
+
+    respondWithJSON(w, 200, chirp)
+
+	})
+
+	
+
 	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 	
 		decoder := json.NewDecoder(r.Body)
@@ -175,6 +213,38 @@ func main() {
 		}
 
 		respondWithJSON(w, 201, chirp)
+
+	})
+
+
+	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
+	
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+
+		err := decoder.Decode(&params)
+
+		if err != nil {
+			respondWithError(w, 400, "Something went wrong")
+			return
+		}
+
+		db, err := database.NewDB("database.json")
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB: " + err.Error())
+			return
+		}
+
+		log.Print(params.Email)
+		user, err := db.CreateUser(params.Email)
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen des User: " + err.Error())
+			return
+		}
+
+		respondWithJSON(w, 201, user)
 
 	})
 
