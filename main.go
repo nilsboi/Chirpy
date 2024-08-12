@@ -43,6 +43,12 @@ type parameters struct {
 	Email            string `json:"email"`
 	Password         string `json:"password"`
 	ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
+	Event string `json:"event"`
+	Data data `json:"data"`
+}
+
+type data struct {
+	User int `json:"user_id"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -114,6 +120,7 @@ func main() {
 
 	godotenv.Load()
 	jwtSecret := os.Getenv("JWT_SECRET")
+	polkaSecret := os.Getenv("POLKA_SECRET")
 
 	apiCfg := &apiConfig{jwt: jwtSecret}
 	mux := http.NewServeMux()
@@ -149,6 +156,9 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+		s := r.URL.Query().Get("author_id")
+		sort := r.URL.Query().Get("sort")
+
 
 		db, err := database.NewDB("database.json")
 
@@ -157,7 +167,7 @@ func main() {
 			return
 		}
 
-		chirps, err := db.GetChirps(0)
+		chirps, err := db.GetChirps(s, sort)
 		if err != nil {
 			respondWithError(w, 400, "Fehler beim Abrufen der Chirps: "+err.Error())
 			return
@@ -417,6 +427,60 @@ func main() {
 			w.WriteHeader(204)
 		} else {
 			w.WriteHeader(403)
+		}
+
+	})
+
+	mux.HandleFunc("POST /api/polka/webhooks", func(w http.ResponseWriter, r *http.Request) {
+		tokenEx := r.Header.Get("Authorization")
+
+		if tokenEx == "" {
+			w.WriteHeader(401)
+			return
+		}
+
+		tokenString := strings.Split(tokenEx, " ")[1]
+		
+		if tokenString != polkaSecret {
+			log.Print(tokenString)
+			log.Print(polkaSecret)
+			w.WriteHeader(401)
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+
+		err := decoder.Decode(&params)
+
+		if err != nil {
+			w.WriteHeader(401)
+			return
+		}
+
+		if params.Event != "user.upgraded" {
+			w.WriteHeader(204)
+			return
+		} 
+			
+		db, err := database.NewDB("database.json")
+
+		if err != nil {
+			respondWithError(w, 400, "Fehler beim Erstellen der DB-Verbindung: "+err.Error())
+			return
+		}
+
+		succ, err := db.UpdatePremium(params.Data.User)
+
+		if err != nil {
+			respondWithError(w, 404, "Fehler "+err.Error())
+			return
+		}
+
+		if succ {
+			w.WriteHeader(204)
+		} else {
+			w.WriteHeader(404)
 		}
 
 	})

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type User struct {
 	Password     *string `json:"password,omitempty"`
 	Token        string `json:"token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	Premium bool `json:"is_chirpy_red"`
 }
 
 // CreateChirp creates a new chirp and saves it to disk
@@ -59,7 +61,7 @@ func (db *DB) CreateChirp(body string, token string) (Chirp, error) {
 	for _, user := range users {
 		
 		if user.Token == token {
-			chirps, err1 := db.GetChirps(0)
+			chirps, err1 := db.GetChirps("", "")
 
 			if err1 != nil {
 				log.Printf("Error fetching chirps in database: %v", err1)
@@ -105,7 +107,7 @@ func (db *DB) CreateChirp(body string, token string) (Chirp, error) {
 }
 
 // GetChirps returns all chirps in the database
-func (db *DB) GetChirps(id int) ([]Chirp, error) {
+func (db *DB) GetChirps(id string, s string) ([]Chirp, error) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
 	dbStructure, err := db.loadDB()
@@ -117,17 +119,29 @@ func (db *DB) GetChirps(id int) ([]Chirp, error) {
 
 	chirps := []Chirp{}
 
-	if id == 0 {
+	if id == "" {
 
 		for _, chirp := range dbStructure.Chirps {
 			chirps = append(chirps, chirp)
 		}
 	} else {
+
+		i, err := strconv.Atoi(id)
+
+		if err != nil {
+			log.Printf("Casting int: %v", err)
+			return nil, err
+		}
+
 		for _, chirp := range dbStructure.Chirps {
-			if id == chirp.ID {
+			if i == chirp.Author {
 				chirps = append(chirps, chirp)
 			}
 		}
+	}
+
+	if s== "desc" {
+		sort.Slice(chirps, func(i, j int) bool { return chirps[i].ID < chirps[j].ID })
 	}
 
 	return chirps, nil
@@ -305,6 +319,7 @@ func (db *DB) CreateUser(email string, password string) (User, error) {
 		ID:       id,
 		Email:    email,
 		Password: &password,
+		Premium: false,
 	}
 
 	dbStructure, err2 := db.loadDB()
@@ -574,6 +589,34 @@ func (db *DB) RevokeToken(token string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (db *DB) UpdatePremium(user int) (bool, error) {
+
+
+	dbStructure, err := db.loadDB()
+
+	if err != nil {
+		log.Print("Error saving access token")
+		return false, errors.New("error revoking token")
+	}
+
+	val, ok := dbStructure.Users[user]
+
+	if ok {
+		val.Premium = true
+		dbStructure.Users[user] = val
+
+		err2 := db.writeDB(dbStructure)
+
+		if err2 != nil {
+			log.Print("Error saving user")
+			return false, errors.New("error upgrading")
+		}
+		return true, nil
+	}
+
+	return false, nil 
 }
 
 func HashPassword(password string) (string, error) {
